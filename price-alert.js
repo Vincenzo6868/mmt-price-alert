@@ -6,23 +6,12 @@ import TelegramBot from "node-telegram-bot-api";
 import Decimal from "decimal.js";
 
 // === TELEGRAM CONFIG ===
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "7617664603:AAG0uhabnAF489uuxqKEyWthCZQhpWj96p8";
-const CHAT_ID = process.env.CHAT_ID || "1656012254";
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+const CHAT_ID = process.env.CHAT_ID;
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true }); // Bật polling để nhận lệnh
 
 // === DANH SÁCH POOL CẦN THEO DÕI (có thể thêm/xóa động qua bot) ===
-const poolConfigs = [
-  {
-    id: "0xb556fc22cef37bee2ab045bfbbd370f4080db5f6f2dd35a8eff3699ddf48e454", // FDUSD/USDC
-    name: "FDUSD/USDC",
-    min: 0.998,
-    max: 1.001,
-    decimals0: 6, // FDUSD decimals (token0)
-    decimals1: 6, // USDC decimals (token1)
-    invert: false, // false = giá token1/token0 (USDC per FDUSD), true = token0/token1
-  },
-  // thêm pool khác tại đây...
-];
+const poolConfigs = [];
 
 const RPC_URL = "https://fullnode.mainnet.sui.io/";
 const interval = 60 * 1000 * 5; // kiểm tra mỗi 5 phút
