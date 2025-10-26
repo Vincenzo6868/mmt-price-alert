@@ -1,0 +1,33 @@
+{
+  "name": "pricealert",
+  "version": "1.0.0",
+  "description": "Sui blockchain price alert bot",
+  "main": "price-alert.js",
+  "type": "module",
+  "scripts": {
+    "start": "node price-alert.js",
+    "dev": "node price-alert.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "price",
+    "alert",
+    "sui",
+    "crypto"
+  ],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.12.2",
+    "cheerio": "^1.1.2",
+    "decimal.js": "^10.6.0",
+    "dotenv": "^16.6.1",
+    "node-notifier": "^10.0.1",
+    "node-telegram-bot-api": "^0.66.0"
+  }
+}
