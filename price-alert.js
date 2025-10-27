@@ -4,6 +4,7 @@ import axios from "axios";
 import notifier from "node-notifier";
 import TelegramBot from "node-telegram-bot-api";
 import Decimal from "decimal.js";
+import http from "http";
 
 // === TELEGRAM CONFIG ===
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
@@ -491,3 +492,27 @@ bot.on("message", (msg) => {
 console.log("🚀 MMT On-chain Price Alert (SUI RPC) đang chạy...");
 checkPools();
 setInterval(checkPools, interval);
+
+
+// === HTTP SERVER (CHO RENDER WEB SERVICE) ===
+const PORT = process.env.PORT || 3000;
+const server = http.createServer((req, res) => {
+  if (req.url === "/health" || req.url === "/") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        status: "running",
+        bot: "MMT Price Alert",
+        pools: poolConfigs.length,
+        uptime: process.uptime(),
+      })
+    );
+  } else {
+    res.writeHead(404);
+    res.end("Not Found");
+  }
+});
+
+server.listen(PORT, () => {
+  console.log(`🌐 HTTP server listening on port ${PORT} (for Render health check)`);
+});
