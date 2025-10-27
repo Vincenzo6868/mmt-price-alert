@@ -160,28 +160,44 @@ async function checkPools() {
 
 // === TELEGRAM BOT COMMANDS ===
 
+// Hàm tạo menu button
+function getMainMenu() {
+  return {
+    reply_markup: {
+      keyboard: [
+        [{ text: "📊 Xem Pools" }, { text: "📈 Giá Hiện Tại" }],
+        [{ text: "➕ Thêm Pool" }, { text: "✏️ Sửa Pool" }],
+        [{ text: "🗑️ Xóa Pool" }, { text: "❓ Hướng Dẫn" }],
+      ],
+      resize_keyboard: true,
+      one_time_keyboard: false,
+    },
+  };
+}
+
 // /start - Hướng dẫn sử dụng
 bot.onText(/\/start/, (msg) => {
   const helpText = `
 🤖 *MMT Price Alert Bot*
 
-📋 *Lệnh có sẵn:*
-/list - Xem danh sách pools đang theo dõi
-/add - Thêm pool mới
-/edit - Sửa min/max của pool
-/remove - Xóa pool
-/status - Xem trạng thái hiện tại
-/help - Xem hướng dẫn
+Chào mừng! Sử dụng các nút bên dưới để thao tác với bot.
+
+📋 *Chức năng:*
+• 📊 Xem Pools - Danh sách pools đang theo dõi
+• 📈 Giá Hiện Tại - Kiểm tra giá real-time
+• ➕ Thêm Pool - Thêm pool mới
+• ✏️ Sửa Pool - Sửa ngưỡng min/max
+• 🗑️ Xóa Pool - Xóa pool khỏi danh sách
+• ❓ Hướng Dẫn - Xem hướng dẫn chi tiết
 
 📝 *Cách thêm pool:*
-\`/add\`
-Sau đó gửi thông tin theo format:
+Nhấn "➕ Thêm Pool" rồi gửi thông tin theo format:
 \`\`\`
 PoolID
 PoolName
 Min
 Max
-Invert (true/false - optional, mặc định false)
+Invert (true/false - optional)
 \`\`\`
 
 *Ví dụ:*
@@ -192,29 +208,71 @@ USDT/USDC
 1.002
 false
 \`\`\`
-
-Hoặc ngắn gọn hơn (bỏ invert):
-\`\`\`
-0xabc123...
-USDT/USDC
-0.998
-1.002
-\`\`\`
   `;
-  bot.sendMessage(msg.chat.id, helpText, { parse_mode: "Markdown" });
-});
-
-// /help
-bot.onText(/\/help/, (msg) => {
-  bot.sendMessage(msg.chat.id, "Gửi /start để xem hướng dẫn đầy đủ", {
+  bot.sendMessage(msg.chat.id, helpText, {
     parse_mode: "Markdown",
+    ...getMainMenu(),
   });
 });
 
-// /list - Xem danh sách pools
-bot.onText(/\/list/, (msg) => {
+// /help hoặc nút "❓ Hướng Dẫn"
+bot.onText(/\/help/, (msg) => {
+  bot.onText(/\/start/, (msg) => {}); // Gọi lại /start
+  bot.sendMessage(msg.chat.id, "Gửi /start để xem hướng dẫn đầy đủ", {
+    parse_mode: "Markdown",
+    ...getMainMenu(),
+  });
+});
+
+// Xử lý button text
+bot.on("message", (msg) => {
+  const chatId = msg.chat.id;
+  const text = msg.text;
+
+  // Xử lý button menu
+  if (text === "📊 Xem Pools" || text === "/list") {
+    handleListPools(msg);
+    return;
+  }
+  
+  if (text === "📈 Giá Hiện Tại" || text === "/status") {
+    handleStatus(msg);
+    return;
+  }
+  
+  if (text === "➕ Thêm Pool" || text === "/add") {
+    handleAddPool(msg);
+    return;
+  }
+  
+  if (text === "✏️ Sửa Pool" || text === "/edit") {
+    handleEditPool(msg);
+    return;
+  }
+  
+  if (text === "🗑️ Xóa Pool" || text === "/remove") {
+    handleRemovePool(msg);
+    return;
+  }
+  
+  if (text === "❓ Hướng Dẫn" || text === "/help") {
+    bot.emit('message', { ...msg, text: '/start' });
+    return;
+  }
+
+  // Bỏ qua nếu là lệnh khác
+  if (text.startsWith("/")) return;
+
+  // Xử lý các thao tác nhập liệu (add/edit/remove pool)
+  handleUserInput(msg);
+});
+
+// === HANDLER FUNCTIONS ===
+
+// Handler: Xem danh sách pools
+function handleListPools(msg) {
   if (poolConfigs.length === 0) {
-    bot.sendMessage(msg.chat.id, "📭 Chưa có pool nào được theo dõi.");
+    bot.sendMessage(msg.chat.id, "📭 Chưa có pool nào được theo dõi.", getMainMenu());
     return;
   }
 
@@ -228,15 +286,21 @@ bot.onText(/\/list/, (msg) => {
     message += `   Invert: ${pool.invert}\n\n`;
   });
 
-  bot.sendMessage(msg.chat.id, message, { parse_mode: "Markdown" });
-});
+  bot.sendMessage(msg.chat.id, message, { 
+    parse_mode: "Markdown",
+    ...getMainMenu()
+  });
+}
 
-// /status - Xem trạng thái và giá hiện tại
-bot.onText(/\/status/, async (msg) => {
+// /list - Xem danh sách pools (legacy command support)
+bot.onText(/\/list/, handleListPools);
+
+// Handler: Xem trạng thái và giá hiện tại
+async function handleStatus(msg) {
   bot.sendMessage(msg.chat.id, "🔄 Đang kiểm tra giá...");
 
   if (poolConfigs.length === 0) {
-    bot.sendMessage(msg.chat.id, "📭 Chưa có pool nào được theo dõi.");
+    bot.sendMessage(msg.chat.id, "📭 Chưa có pool nào được theo dõi.", getMainMenu());
     return;
   }
 
@@ -258,13 +322,17 @@ bot.onText(/\/status/, async (msg) => {
     message += `   Range: ${config.min} - ${config.max}\n\n`;
   }
 
-  bot.sendMessage(msg.chat.id, message, { parse_mode: "Markdown" });
-});
+  bot.sendMessage(msg.chat.id, message, { 
+    parse_mode: "Markdown",
+    ...getMainMenu()
+  });
+}
 
-// /add - Thêm pool mới (bước 1)
-let pendingAddPool = {}; // Lưu trạng thái đang chờ nhập thông tin
+// /status - legacy command support
+bot.onText(/\/status/, handleStatus);
 
-bot.onText(/\/add/, (msg) => {
+// Handler: Thêm pool mới
+function handleAddPool(msg) {
   const chatId = msg.chat.id;
   pendingAddPool[chatId] = true;
 
@@ -301,15 +369,24 @@ USDT/USDC
 Gửi /cancel để hủy.
   `;
 
-  bot.sendMessage(chatId, instruction, { parse_mode: "Markdown" });
-});
+  bot.sendMessage(chatId, instruction, { 
+    parse_mode: "Markdown",
+    ...getMainMenu()
+  });
+}
 
-// /edit - Sửa min/max của pool
-bot.onText(/\/edit/, (msg) => {
+// /add - legacy command support  
+bot.onText(/\/add/, handleAddPool);
+
+// Lưu trạng thái đang chờ nhập thông tin
+let pendingAddPool = {};
+
+// Handler: Sửa pool
+function handleEditPool(msg) {
   const chatId = msg.chat.id;
 
   if (poolConfigs.length === 0) {
-    bot.sendMessage(chatId, "📭 Chưa có pool nào để sửa.");
+    bot.sendMessage(chatId, "📭 Chưa có pool nào để sửa.", getMainMenu());
     return;
   }
 
@@ -322,15 +399,21 @@ bot.onText(/\/edit/, (msg) => {
   message += `\nGửi số thứ tự pool cần sửa (ví dụ: 1)`;
 
   pendingAddPool[chatId] = "edit";
-  bot.sendMessage(chatId, message, { parse_mode: "Markdown" });
-});
+  bot.sendMessage(chatId, message, { 
+    parse_mode: "Markdown",
+    ...getMainMenu()
+  });
+}
 
-// /remove - Xóa pool
-bot.onText(/\/remove/, (msg) => {
+// /edit - Sửa min/max của pool
+bot.onText(/\/edit/, handleEditPool);
+
+// Handler: Xóa pool
+function handleRemovePool(msg) {
   const chatId = msg.chat.id;
 
   if (poolConfigs.length === 0) {
-    bot.sendMessage(chatId, "📭 Chưa có pool nào để xóa.");
+    bot.sendMessage(chatId, "📭 Chưa có pool nào để xóa.", getMainMenu());
     return;
   }
 
@@ -341,23 +424,26 @@ bot.onText(/\/remove/, (msg) => {
   message += `\nGửi số thứ tự pool cần xóa (ví dụ: 1)`;
 
   pendingAddPool[chatId] = "remove";
-  bot.sendMessage(chatId, message, { parse_mode: "Markdown" });
-});
+  bot.sendMessage(chatId, message, { 
+    parse_mode: "Markdown",
+    ...getMainMenu()
+  });
+}
+
+// /remove - Xóa pool
+bot.onText(/\/remove/, handleRemovePool);
 
 // /cancel - Hủy thao tác
 bot.onText(/\/cancel/, (msg) => {
   const chatId = msg.chat.id;
   delete pendingAddPool[chatId];
-  bot.sendMessage(chatId, "❌ Đã hủy thao tác.");
+  bot.sendMessage(chatId, "❌ Đã hủy thao tác.", getMainMenu());
 });
 
-// Xử lý tin nhắn thông thường (thêm/xóa pool)
-bot.on("message", (msg) => {
+// === XỬ LÝ NHẬP LIỆU (ADD/EDIT/REMOVE POOL) ===
+function handleUserInput(msg) {
   const chatId = msg.chat.id;
   const text = msg.text;
-
-  // Bỏ qua nếu là lệnh
-  if (text.startsWith("/")) return;
 
   // Xử lý sửa pool - bước 1: chọn pool
   if (pendingAddPool[chatId] === "edit") {
@@ -483,10 +569,13 @@ bot.on("message", (msg) => {
     bot.sendMessage(
       chatId,
       `✅ *Đã thêm pool mới:*\n\n*${newPool.name}*\nRange: ${min} - ${max}\nInvert: ${invert}\n\n_Decimals mặc định: 6/6_`,
-      { parse_mode: "Markdown" }
+      { 
+        parse_mode: "Markdown",
+        ...getMainMenu()
+      }
     );
   }
-});
+}
 
 // === CHẠY LIÊN TỤC ===
 console.log("🚀 MMT On-chain Price Alert (SUI RPC) đang chạy...");
