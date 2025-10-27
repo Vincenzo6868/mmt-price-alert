@@ -165,9 +165,9 @@ function getMainMenu() {
   return {
     reply_markup: {
       keyboard: [
-        [{ text: "📊 Xem Pools" }, { text: "📈 Giá Hiện Tại" }],
-        [{ text: "➕ Thêm Pool" }, { text: "✏️ Sửa Pool" }],
-        [{ text: "🗑️ Xóa Pool" }, { text: "❓ Hướng Dẫn" }],
+        [{ text: "📊 Pools" }, { text: "📈 Giá" }],
+        [{ text: "➕ Thêm" }, { text: "✏️ Sửa" }, { text: "🗑️ Xóa" }],
+        [{ text: "❓ Help" }],
       ],
       resize_keyboard: true,
       one_time_keyboard: false,
@@ -175,23 +175,23 @@ function getMainMenu() {
   };
 }
 
-// /start - Hướng dẫn sử dụng
-bot.onText(/\/start/, (msg) => {
+// Handler: Help/Start
+function handleHelp(msg) {
   const helpText = `
 🤖 *MMT Price Alert Bot*
 
 Chào mừng! Sử dụng các nút bên dưới để thao tác với bot.
 
 📋 *Chức năng:*
-• 📊 Xem Pools - Danh sách pools đang theo dõi
-• 📈 Giá Hiện Tại - Kiểm tra giá real-time
-• ➕ Thêm Pool - Thêm pool mới
-• ✏️ Sửa Pool - Sửa ngưỡng min/max
-• 🗑️ Xóa Pool - Xóa pool khỏi danh sách
-• ❓ Hướng Dẫn - Xem hướng dẫn chi tiết
+• 📊 Pools - Xem danh sách pools
+• 📈 Giá - Kiểm tra giá real-time
+• ➕ Thêm - Thêm pool mới
+• ✏️ Sửa - Sửa ngưỡng min/max
+• 🗑️ Xóa - Xóa pool
+• ❓ Help - Xem hướng dẫn
 
 📝 *Cách thêm pool:*
-Nhấn "➕ Thêm Pool" rồi gửi thông tin theo format:
+Nhấn "➕ Thêm" rồi gửi thông tin:
 \`\`\`
 PoolID
 PoolName
@@ -202,7 +202,7 @@ Invert (true/false - optional)
 
 *Ví dụ:*
 \`\`\`
-0xabc123...
+0xb556fc22cef...
 USDT/USDC
 0.998
 1.002
@@ -213,16 +213,13 @@ false
     parse_mode: "Markdown",
     ...getMainMenu(),
   });
-});
+}
 
-// /help hoặc nút "❓ Hướng Dẫn"
-bot.onText(/\/help/, (msg) => {
-  bot.onText(/\/start/, (msg) => {}); // Gọi lại /start
-  bot.sendMessage(msg.chat.id, "Gửi /start để xem hướng dẫn đầy đủ", {
-    parse_mode: "Markdown",
-    ...getMainMenu(),
-  });
-});
+// /start - Hướng dẫn sử dụng
+bot.onText(/\/start/, handleHelp);
+
+// /help
+bot.onText(/\/help/, handleHelp);
 
 // Xử lý button text
 bot.on("message", (msg) => {
@@ -230,33 +227,33 @@ bot.on("message", (msg) => {
   const text = msg.text;
 
   // Xử lý button menu
-  if (text === "📊 Xem Pools" || text === "/list") {
+  if (text === "📊 Pools" || text === "/list") {
     handleListPools(msg);
     return;
   }
   
-  if (text === "📈 Giá Hiện Tại" || text === "/status") {
+  if (text === "📈 Giá" || text === "/status") {
     handleStatus(msg);
     return;
   }
   
-  if (text === "➕ Thêm Pool" || text === "/add") {
+  if (text === "➕ Thêm" || text === "/add") {
     handleAddPool(msg);
     return;
   }
   
-  if (text === "✏️ Sửa Pool" || text === "/edit") {
+  if (text === "✏️ Sửa" || text === "/edit") {
     handleEditPool(msg);
     return;
   }
   
-  if (text === "🗑️ Xóa Pool" || text === "/remove") {
+  if (text === "🗑️ Xóa" || text === "/remove") {
     handleRemovePool(msg);
     return;
   }
   
-  if (text === "❓ Hướng Dẫn" || text === "/help") {
-    bot.emit('message', { ...msg, text: '/start' });
+  if (text === "❓ Help" || text === "/help" || text === "/start") {
+    handleHelp(msg);
     return;
   }
 
