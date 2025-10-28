@@ -20,6 +20,16 @@ const interval = 60 * 1000 * 5; // kiểm tra mỗi 5 phút
 // === TRẠNG THÁI LƯU CẢNH BÁO (ĐỂ KHÔNG LẶP LẠI) ===
 const alertStatus = {}; // { poolId: 'inside' | 'outside' }
 
+// === TÍNH NĂNG THEO DÕI BỔ SUNG (TOGGLE) ===
+const trackingFeatures = {
+  oneHourWarning: true, // Cảnh báo sau 1 tiếng ngoài vùng
+  backInRangeAlert: true, // Thông báo khi giá trở lại trong vùng
+};
+
+// === TRACKING THỜI GIAN NGOÀI VÙNG ===
+const outsideRangeTimestamp = {}; // { poolId: timestamp }
+const oneHourWarningsSent = {}; // { poolId: boolean } - đã gửi cảnh báo 1h chưa
+
 // === HÀM TÍNH GIÁ TỪ sqrt_price ===
 // Công thức CLMM cho Momentum/Sui: price = (sqrtPriceX64 / 2^64)^2
 // Momentum sử dụng Q64 thay vì Q96 như Uniswap V3
@@ -103,6 +113,7 @@ async function getPoolData(poolId, config) {
 // === HÀM CHÍNH KIỂM TRA GIÁ ===
 async function checkPools() {
   const now = new Date().toLocaleTimeString("vi-VN", { hour12: false });
+  const currentTime = Date.now();
 
   for (const config of poolConfigs) {
     const price = await getPoolData(config.id, config);
@@ -136,22 +147,60 @@ async function checkPools() {
       await bot.sendMessage(CHAT_ID, message, { parse_mode: "Markdown" });
 
       alertStatus[config.id] = "outside";
+      
+      // Lưu thời điểm bắt đầu ngoài vùng
+      outsideRangeTimestamp[config.id] = currentTime;
+      oneHourWarningsSent[config.id] = false;
+      
     } else if (!isOutside && prevStatus === "outside") {
       // → quay lại vùng an toàn → gửi thông báo 1 lần
-      const message = `✅ *${
-        config.name
-      }* đã quay lại vùng an toàn.\nGiá hiện tại: *${price.toFixed(
-        8
-      )}*\n⏰ ${now}`;
-      notifier.notify({
-        title: `${config.name} Price Recovered`,
-        message: `Giá hiện tại: ${price.toFixed(8)} (đã trong vùng ${
-          config.min
-        }–${config.max})`,
-      });
-      await bot.sendMessage(CHAT_ID, message, { parse_mode: "Markdown" });
+      if (trackingFeatures.backInRangeAlert) {
+        const message = `✅ *${
+          config.name
+        }* đã quay lại vùng an toàn.\nGiá hiện tại: *${price.toFixed(
+          8
+        )}*\n⏰ ${now}`;
+        notifier.notify({
+          title: `${config.name} Price Recovered`,
+          message: `Giá hiện tại: ${price.toFixed(8)} (đã trong vùng ${
+            config.min
+          }–${config.max})`,
+        });
+        await bot.sendMessage(CHAT_ID, message, { parse_mode: "Markdown" });
+      }
 
       alertStatus[config.id] = "inside";
+      
+      // Reset tracking khi quay lại vùng an toàn
+      delete outsideRangeTimestamp[config.id];
+      delete oneHourWarningsSent[config.id];
+      
+    } else if (isOutside && prevStatus === "outside") {
+      // → vẫn đang ngoài vùng → kiểm tra xem đã quá 1 tiếng chưa
+      if (trackingFeatures.oneHourWarning && 
+          outsideRangeTimestamp[config.id] && 
+          !oneHourWarningsSent[config.id]) {
+        
+        const timeOutside = currentTime - outsideRangeTimestamp[config.id];
+        const oneHourInMs = 60 * 60 * 1000; // 1 giờ = 3,600,000 ms
+        
+        if (timeOutside >= oneHourInMs) {
+          const message = `⏰ *CẢNH BÁO:* ${config.name} đã ngoài vùng hơn 1 tiếng!\n\n` +
+            `Giá hiện tại: *${price.toFixed(8)}*\n` +
+            `Range: ${config.min}–${config.max}\n\n` +
+            `💡 _Hãy cân nhắc cập nhật lại min/max!_\n` +
+            `⏰ ${now}`;
+          
+          notifier.notify({
+            title: `${config.name} - 1 Hour Warning`,
+            message: `Đã ngoài vùng hơn 1 tiếng! Giá: ${price.toFixed(8)}`,
+            sound: true,
+          });
+          
+          await bot.sendMessage(CHAT_ID, message, { parse_mode: "Markdown" });
+          oneHourWarningsSent[config.id] = true;
+        }
+      }
     }
   }
 
@@ -167,7 +216,7 @@ function getMainMenu() {
       keyboard: [
         [{ text: "📊 Pools" }, { text: "📈 Giá" }],
         [{ text: "➕ Thêm" }, { text: "✏️ Sửa" }, { text: "🗑️ Xóa" }],
-        [{ text: "❓ Help" }],
+        [{ text: "⚙️ Toggle" }, { text: "❓ Help" }],
       ],
       resize_keyboard: true,
       one_time_keyboard: false,
@@ -188,6 +237,7 @@ Chào mừng! Sử dụng các nút bên dưới để thao tác với bot.
 • ➕ Thêm - Thêm pool mới
 • ✏️ Sửa - Sửa ngưỡng min/max
 • 🗑️ Xóa - Xóa pool
+• ⚙️ Toggle - Bật/tắt tính năng theo dõi
 • ❓ Help - Xem hướng dẫn
 
 📝 *Cách thêm pool:*
@@ -203,11 +253,16 @@ Invert (true/false - optional)
 *Ví dụ:*
 \`\`\`
 0xb556fc22cef...
-USDT/USDC
+FDUSD/USDC
 0.998
 1.002
 false
 \`\`\`
+
+🔔 *Tính năng theo dõi:*
+• Cảnh báo sau 1h ngoài vùng
+• Thông báo khi giá trở lại trong vùng
+_(Dùng ⚙️ Toggle để bật/tắt)_
   `;
   bot.sendMessage(msg.chat.id, helpText, {
     parse_mode: "Markdown",
@@ -249,6 +304,11 @@ bot.on("message", (msg) => {
   
   if (text === "🗑️ Xóa" || text === "/remove") {
     handleRemovePool(msg);
+    return;
+  }
+  
+  if (text === "⚙️ Toggle" || text === "/toggle") {
+    handleToggleFeatures(msg);
     return;
   }
   
@@ -328,6 +388,33 @@ async function handleStatus(msg) {
 // /status - legacy command support
 bot.onText(/\/status/, handleStatus);
 
+// Handler: Toggle tracking features
+function handleToggleFeatures(msg) {
+  const chatId = msg.chat.id;
+  
+  const statusEmoji = (enabled) => enabled ? "✅" : "❌";
+  
+  const message = `⚙️ *Cài đặt tính năng theo dõi*\n\n` +
+    `${statusEmoji(trackingFeatures.oneHourWarning)} *1. Cảnh báo sau 1h ngoài vùng*\n` +
+    `   Gửi cảnh báo nếu giá ngoài vùng quá 1 tiếng mà chưa cập nhật min/max\n\n` +
+    `${statusEmoji(trackingFeatures.backInRangeAlert)} *2. Thông báo khi giá trở lại vùng*\n` +
+    `   Thông báo khi giá từ ngoài vùng quay lại trong vùng an toàn\n\n` +
+    `📝 *Để bật/tắt:*\n` +
+    `Gửi số tính năng muốn toggle (1 hoặc 2)\n` +
+    `Ví dụ: gửi \`1\` để toggle tính năng cảnh báo 1h\n\n` +
+    `Hoặc gửi /cancel để hủy.`;
+  
+  pendingAddPool[chatId] = "toggle";
+  
+  bot.sendMessage(chatId, message, { 
+    parse_mode: "Markdown",
+    ...getMainMenu()
+  });
+}
+
+// /toggle - legacy command support
+bot.onText(/\/toggle/, handleToggleFeatures);
+
 // Handler: Thêm pool mới
 function handleAddPool(msg) {
   const chatId = msg.chat.id;
@@ -349,7 +436,7 @@ Invert (true/false - optional)
 *Ví dụ đầy đủ:*
 \`\`\`
 0xb556fc22cef37bee2ab045bfbbd370f4080db5f6f2dd35a8eff3699ddf48e454
-USDT/USDC
+FDUSD/USDC
 0.998
 1.002
 false
@@ -358,7 +445,7 @@ false
 *Hoặc bỏ invert (mặc định false):*
 \`\`\`
 0xb556fc22cef37bee2ab045bfbbd370f4080db5f6f2dd35a8eff3699ddf48e454
-USDT/USDC
+FDUSD/USDC
 0.998
 1.002
 \`\`\`
@@ -442,6 +529,36 @@ function handleUserInput(msg) {
   const chatId = msg.chat.id;
   const text = msg.text;
 
+  // Xử lý toggle features
+  if (pendingAddPool[chatId] === "toggle") {
+    const choice = parseInt(text);
+    
+    if (choice === 1) {
+      trackingFeatures.oneHourWarning = !trackingFeatures.oneHourWarning;
+      const status = trackingFeatures.oneHourWarning ? "BẬT" : "TẮT";
+      bot.sendMessage(
+        chatId,
+        `✅ Đã *${status}* tính năng "Cảnh báo sau 1h ngoài vùng"`,
+        { parse_mode: "Markdown", ...getMainMenu() }
+      );
+      delete pendingAddPool[chatId];
+      return;
+    } else if (choice === 2) {
+      trackingFeatures.backInRangeAlert = !trackingFeatures.backInRangeAlert;
+      const status = trackingFeatures.backInRangeAlert ? "BẬT" : "TẮT";
+      bot.sendMessage(
+        chatId,
+        `✅ Đã *${status}* tính năng "Thông báo khi giá trở lại vùng"`,
+        { parse_mode: "Markdown", ...getMainMenu() }
+      );
+      delete pendingAddPool[chatId];
+      return;
+    } else {
+      bot.sendMessage(chatId, "❌ Vui lòng gửi 1 hoặc 2. Hoặc /cancel để hủy.");
+      return;
+    }
+  }
+
   // Xử lý sửa pool - bước 1: chọn pool
   if (pendingAddPool[chatId] === "edit") {
     const index = parseInt(text) - 1;
@@ -494,13 +611,17 @@ function handleUserInput(msg) {
 
     // Reset trạng thái cảnh báo để nhận alert mới với ngưỡng mới
     alertStatus[pool.id] = "inside";
+    
+    // Reset tracking timestamp và cảnh báo 1h
+    delete outsideRangeTimestamp[pool.id];
+    delete oneHourWarningsSent[pool.id];
 
     delete pendingAddPool[chatId];
 
     bot.sendMessage(
       chatId,
       `✅ *Đã cập nhật ${pool.name}*\n\nRange mới: ${min} - ${max}\n\n_Trạng thái cảnh báo đã được reset_`,
-      { parse_mode: "Markdown" }
+      { parse_mode: "Markdown", ...getMainMenu() }
     );
     return;
   }
