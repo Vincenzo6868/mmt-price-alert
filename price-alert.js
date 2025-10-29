@@ -28,7 +28,11 @@ const trackingFeatures = {
 
 // === TRACKING THỜI GIAN NGOÀI VÙNG ===
 const outsideRangeTimestamp = {}; // { poolId: timestamp }
-const oneHourWarningsSent = {}; // { poolId: boolean } - đã gửi cảnh báo 1h chưa
+const lastHourlyWarning = {}; // { poolId: timestamp } - lần cảnh báo hourly gần nhất
+
+// === TRACKING THỜI GIAN TRONG VÙNG (IN RANGE) ===
+const inRangeStartTime = {}; // { poolId: timestamp } - thời điểm bắt đầu trong range
+const totalInRangeTime = {}; // { poolId: milliseconds } - tổng thời gian đã trong range
 
 // === HÀM TÍNH GIÁ TỪ sqrt_price ===
 // Công thức CLMM cho Momentum/Sui: price = (sqrtPriceX64 / 2^64)^2
@@ -56,6 +60,61 @@ function calcPriceFromSqrt(
   }
 
   return parseFloat(price.toFixed(10));
+}
+
+// === HÀM TÍNH TỔNG THỜI GIAN TRONG RANGE ===
+function getTotalInRangeTime(poolId) {
+  const currentTime = Date.now();
+  let total = totalInRangeTime[poolId] || 0;
+  
+  // Nếu hiện tại đang trong range, cộng thêm thời gian từ lúc bắt đầu đến giờ
+  if (inRangeStartTime[poolId]) {
+    total += currentTime - inRangeStartTime[poolId];
+  }
+  
+  return total;
+}
+
+// === HÀM FORMAT THỜI GIAN ===
+function formatDuration(milliseconds) {
+  const seconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  
+  if (days > 0) {
+    const remainingHours = hours % 24;
+    return `${days} ngày ${remainingHours}h`;
+  } else if (hours > 0) {
+    const remainingMinutes = minutes % 60;
+    return `${hours}h ${remainingMinutes}m`;
+  } else if (minutes > 0) {
+    const remainingSeconds = seconds % 60;
+    return `${minutes}m ${remainingSeconds}s`;
+  } else {
+    return `${seconds}s`;
+  }
+}
+
+// === HÀM FORMAT NGÀY GIỜ (GMT+7) ===
+function formatDateTime() {
+  return new Date().toLocaleString("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+}
+
+function formatTime() {
+  return new Date().toLocaleTimeString("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    hour12: false
+  });
 }
 
 // === HÀM LẤY DỮ LIỆU ON-CHAIN TỪ RPC ===
@@ -112,7 +171,7 @@ async function getPoolData(poolId, config) {
 
 // === HÀM CHÍNH KIỂM TRA GIÁ ===
 async function checkPools() {
-  const now = new Date().toLocaleTimeString("vi-VN", { hour12: false });
+  const now = formatTime();
   const currentTime = Date.now();
 
   for (const config of poolConfigs) {
@@ -150,7 +209,14 @@ async function checkPools() {
       
       // Lưu thời điểm bắt đầu ngoài vùng
       outsideRangeTimestamp[config.id] = currentTime;
-      oneHourWarningsSent[config.id] = false;
+      lastHourlyWarning[config.id] = currentTime; // Lần đầu ra ngoài vùng cũng là lần cảnh báo đầu
+      
+      // Cập nhật tổng thời gian trong range trước khi ra ngoài
+      if (inRangeStartTime[config.id]) {
+        const timeInRange = currentTime - inRangeStartTime[config.id];
+        totalInRangeTime[config.id] = (totalInRangeTime[config.id] || 0) + timeInRange;
+        delete inRangeStartTime[config.id]; // Dừng đếm khi ra ngoài range
+      }
       
     } else if (!isOutside && prevStatus === "outside") {
       // → quay lại vùng an toàn → gửi thông báo 1 lần
@@ -173,32 +239,39 @@ async function checkPools() {
       
       // Reset tracking khi quay lại vùng an toàn
       delete outsideRangeTimestamp[config.id];
-      delete oneHourWarningsSent[config.id];
+      delete lastHourlyWarning[config.id];
+      
+      // Bắt đầu đếm thời gian trong range lại
+      inRangeStartTime[config.id] = currentTime;
       
     } else if (isOutside && prevStatus === "outside") {
-      // → vẫn đang ngoài vùng → kiểm tra xem đã quá 1 tiếng chưa
+      // → vẫn đang ngoài vùng → kiểm tra xem đã quá 1 tiếng kể từ lần cảnh báo trước chưa
       if (trackingFeatures.oneHourWarning && 
           outsideRangeTimestamp[config.id] && 
-          !oneHourWarningsSent[config.id]) {
+          lastHourlyWarning[config.id]) {
         
-        const timeOutside = currentTime - outsideRangeTimestamp[config.id];
+        const timeSinceLastWarning = currentTime - lastHourlyWarning[config.id];
         const oneHourInMs = 60 * 60 * 1000; // 1 giờ = 3,600,000 ms
         
-        if (timeOutside >= oneHourInMs) {
-          const message = `⏰ *CẢNH BÁO:* ${config.name} đã ngoài vùng hơn 1 tiếng!\n\n` +
+        if (timeSinceLastWarning >= oneHourInMs) {
+          // Tính tổng thời gian đã ngoài vùng
+          const totalTimeOutside = currentTime - outsideRangeTimestamp[config.id];
+          const hoursOutside = Math.floor(totalTimeOutside / oneHourInMs);
+          
+          const message = `⏰ *CẢNH BÁO:* ${config.name} đã ngoài vùng ${hoursOutside} tiếng!\n\n` +
             `Giá hiện tại: *${price.toFixed(8)}*\n` +
             `Range: ${config.min}–${config.max}\n\n` +
             `💡 _Hãy cân nhắc cập nhật lại min/max!_\n` +
             `⏰ ${now}`;
           
           notifier.notify({
-            title: `${config.name} - 1 Hour Warning`,
-            message: `Đã ngoài vùng hơn 1 tiếng! Giá: ${price.toFixed(8)}`,
+            title: `${config.name} - ${hoursOutside}h Outside Range`,
+            message: `Đã ngoài vùng ${hoursOutside} tiếng! Giá: ${price.toFixed(8)}`,
             sound: true,
           });
           
           await bot.sendMessage(CHAT_ID, message, { parse_mode: "Markdown" });
-          oneHourWarningsSent[config.id] = true;
+          lastHourlyWarning[config.id] = currentTime; // Cập nhật thời gian cảnh báo mới nhất
         }
       }
     }
@@ -373,10 +446,15 @@ async function handleStatus(msg) {
     const isOutside = price < config.min || price > config.max;
     const emoji = isOutside ? "⚠️" : "✅";
     const statusText = isOutside ? "NGOÀI VÙNG" : "Bình thường";
+    
+    // Tính thời gian trong range
+    const totalTime = getTotalInRangeTime(config.id);
+    const timeStr = formatDuration(totalTime);
 
     message += `${emoji} *${config.name}*\n`;
     message += `   Giá: \`${price.toFixed(8)}\` (${statusText})\n`;
-    message += `   Range: ${config.min} - ${config.max}\n\n`;
+    message += `   Range: ${config.min} - ${config.max}\n`;
+    message += `   ⏱️ Thời gian trong range: ${timeStr}\n\n`;
   }
 
   bot.sendMessage(msg.chat.id, message, { 
@@ -612,9 +690,12 @@ function handleUserInput(msg) {
     // Reset trạng thái cảnh báo để nhận alert mới với ngưỡng mới
     alertStatus[pool.id] = "inside";
     
-    // Reset tracking timestamp và cảnh báo 1h
+    // Reset tracking timestamp và cảnh báo hourly
     delete outsideRangeTimestamp[pool.id];
-    delete oneHourWarningsSent[pool.id];
+    delete lastHourlyWarning[pool.id];
+    
+    // Bắt đầu lại tracking thời gian trong range
+    inRangeStartTime[pool.id] = Date.now();
 
     delete pendingAddPool[chatId];
 
@@ -636,11 +717,19 @@ function handleUserInput(msg) {
     }
 
     const removedPool = poolConfigs.splice(index, 1)[0];
+    
+    // Xóa tất cả tracking data của pool
     delete alertStatus[removedPool.id];
+    delete outsideRangeTimestamp[removedPool.id];
+    delete lastHourlyWarning[removedPool.id];
+    delete inRangeStartTime[removedPool.id];
+    delete totalInRangeTime[removedPool.id];
+    
     delete pendingAddPool[chatId];
 
     bot.sendMessage(chatId, `✅ Đã xóa pool: *${removedPool.name}*`, {
       parse_mode: "Markdown",
+      ...getMainMenu()
     });
     return;
   }
@@ -682,11 +771,16 @@ function handleUserInput(msg) {
     };
 
     poolConfigs.push(newPool);
+    
+    // Khởi tạo tracking thời gian trong range cho pool mới
+    inRangeStartTime[newPool.id] = Date.now();
+    totalInRangeTime[newPool.id] = 0;
+    
     delete pendingAddPool[chatId];
 
     bot.sendMessage(
       chatId,
-      `✅ *Đã thêm pool mới:*\n\n*${newPool.name}*\nRange: ${min} - ${max}\nInvert: ${invert}\n\n_Decimals mặc định: 6/6_`,
+      `✅ *Đã thêm pool mới:*\n\n*${newPool.name}*\nRange: ${min} - ${max}\nInvert: ${invert}\n\n_Decimals mặc định: 6/6_\n_Bắt đầu theo dõi thời gian trong range_`,
       { 
         parse_mode: "Markdown",
         ...getMainMenu()
@@ -712,6 +806,7 @@ const server = http.createServer((req, res) => {
         bot: "MMT Price Alert",
         pools: poolConfigs.length,
         uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
       })
     );
   } else {
@@ -723,3 +818,22 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`🌐 HTTP server listening on port ${PORT} (for Render health check)`);
 });
+
+// === KEEP-ALIVE: TỰ ĐỘNG PING ĐỂ GIỮ SERVER HOẠT ĐỘNG ===
+// Chỉ chạy khi có biến môi trường REPL_SLUG (chỉ có trên Replit)
+if (process.env.REPL_SLUG) {
+  const REPLIT_URL = `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
+  
+  // Ping mỗi 4 phút để giữ Replit không ngủ (Replit timeout sau ~5 phút không activity)
+  setInterval(() => {
+    axios.get(`${REPLIT_URL}/health`)
+      .then(() => {
+        console.log(`🔄 [${formatTime()}] Keep-alive ping successful`);
+      })
+      .catch(err => {
+        console.error(`⚠️ Keep-alive ping failed:`, err.message);
+      });
+  }, 3 * 60 * 1000); // 3 phút
+  
+  console.log(`🔄 Keep-alive enabled cho Replit: ${REPLIT_URL}`);
+}
