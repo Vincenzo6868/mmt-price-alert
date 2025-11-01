@@ -694,14 +694,15 @@ function handleUserInput(msg) {
     delete outsideRangeTimestamp[pool.id];
     delete lastHourlyWarning[pool.id];
     
-    // Bắt đầu lại tracking thời gian trong range
+    // Reset hoàn toàn thời gian tracking trong range
+    totalInRangeTime[pool.id] = 0;
     inRangeStartTime[pool.id] = Date.now();
 
     delete pendingAddPool[chatId];
 
     bot.sendMessage(
       chatId,
-      `✅ *Đã cập nhật ${pool.name}*\n\nRange mới: ${min} - ${max}\n\n_Trạng thái cảnh báo đã được reset_`,
+      `✅ *Đã cập nhật ${pool.name}*\n\nRange mới: ${min} - ${max}\n\n_Trạng thái cảnh báo và thời gian tracking đã được reset về 0_`,
       { parse_mode: "Markdown", ...getMainMenu() }
     );
     return;
