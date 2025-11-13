@@ -1,7 +1,6 @@
 // === IMPORT MODULES ===
 import "dotenv/config";
 import axios from "axios";
-import notifier from "node-notifier";
 import TelegramBot from "node-telegram-bot-api";
 import Decimal from "decimal.js";
 import http from "http";
@@ -196,13 +195,6 @@ async function checkPools() {
       const message = `⚠️ *${config.name}* ngoài vùng ${config.min}–${
         config.max
       }\nGiá hiện tại: *${price.toFixed(8)}*\n⏰ ${now}`;
-      notifier.notify({
-        title: `${config.name} Price Alert`,
-        message: `Giá hiện tại: ${price.toFixed(8)} (ngoài vùng ${config.min}–${
-          config.max
-        })`,
-        sound: true,
-      });
       await bot.sendMessage(CHAT_ID, message, { parse_mode: "Markdown" });
 
       alertStatus[config.id] = "outside";
@@ -226,12 +218,6 @@ async function checkPools() {
         }* đã quay lại vùng an toàn.\nGiá hiện tại: *${price.toFixed(
           8
         )}*\n⏰ ${now}`;
-        notifier.notify({
-          title: `${config.name} Price Recovered`,
-          message: `Giá hiện tại: ${price.toFixed(8)} (đã trong vùng ${
-            config.min
-          }–${config.max})`,
-        });
         await bot.sendMessage(CHAT_ID, message, { parse_mode: "Markdown" });
       }
 
@@ -263,12 +249,6 @@ async function checkPools() {
             `Range: ${config.min}–${config.max}\n\n` +
             `💡 _Hãy cân nhắc cập nhật lại min/max!_\n` +
             `⏰ ${now}`;
-          
-          notifier.notify({
-            title: `${config.name} - ${hoursOutside}h Outside Range`,
-            message: `Đã ngoài vùng ${hoursOutside} tiếng! Giá: ${price.toFixed(8)}`,
-            sound: true,
-          });
           
           await bot.sendMessage(CHAT_ID, message, { parse_mode: "Markdown" });
           lastHourlyWarning[config.id] = currentTime; // Cập nhật thời gian cảnh báo mới nhất

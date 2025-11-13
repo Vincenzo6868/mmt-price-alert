@@ -2,8 +2,23 @@
   "name": "pricealert",
   "version": "1.0.0",
   "description": "Sui blockchain price alert bot",
-  "main": "price-alert.js",
+  "main": "index.js",
+  "bin": "index.js",
   "type": "module",
+  "pkg": {
+    "targets": [
+      "node18-win-x64"
+    ],
+    "outputPath": "dist",
+    "scripts": [
+      "index.js",
+      "price-alert.js"
+    ],
+    "assets": [
+      ".env"
+    ],
+    "bytecode": false
+  },
   "scripts": {
     "start": "node price-alert.js",
     "dev": "node price-alert.js",
@@ -24,10 +39,11 @@
   },
   "dependencies": {
     "axios": "^1.12.2",
-    "cheerio": "^1.1.2",
     "decimal.js": "^10.6.0",
     "dotenv": "^16.6.1",
-    "node-notifier": "^10.0.1",
     "node-telegram-bot-api": "^0.66.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12"
   }
 }
